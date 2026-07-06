@@ -79,7 +79,13 @@ export function clearAuthTokens() {
 export function getApiErrorMessage(error: unknown, fallback = 'Something went wrong') {
   if (axios.isAxiosError<ApiErrorResponse>(error)) {
     if (!error.response) {
-      return 'Cannot reach the API server. Make sure the backend is running (npm run dev on port 8788).';
+      const isLocal =
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      if (isLocal) {
+        return 'Cannot reach the API server. Make sure the backend is running (npm run dev on port 8788).';
+      }
+      return `Cannot reach the API server at ${API_BASE_URL}. Check that the API is deployed and CORS is configured.`;
     }
     return error.response?.data?.error?.message ?? error.message ?? fallback;
   }
