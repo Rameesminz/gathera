@@ -8,6 +8,7 @@ export async function register(input: {
   email: string;
   password: string;
   displayName: string;
+  mobileNumber?: string;
 }) {
   const { data } = await api.post<
     ApiSuccessResponse<{ user: PublicUser; tokens: AuthTokens }>

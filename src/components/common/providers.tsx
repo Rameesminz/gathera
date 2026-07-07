@@ -3,12 +3,18 @@
 import { ThemeProvider } from 'next-themes';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/auth-store';
+import { useCallStore } from '@/stores/call-store';
 import { useNotificationsWebSocket } from '@/hooks/use-notifications-websocket';
 import { usePushNotifications } from '@/hooks/use-push-notifications';
 
 function NotificationSocketBridge() {
   const isAuthenticated = useAuthStore((s) => !!s.user);
-  useNotificationsWebSocket(isAuthenticated);
+  const setIncomingCall = useCallStore((s) => s.setIncomingCall);
+
+  useNotificationsWebSocket({
+    enabled: isAuthenticated,
+    onIncomingCall: setIncomingCall,
+  });
   usePushNotifications();
   return null;
 }

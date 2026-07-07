@@ -19,6 +19,7 @@ export interface PublicUser {
   id: string;
   email: string;
   display_name: string;
+  mobile_number: string | null;
   avatar_url: string | null;
   bio: string | null;
   email_verified: boolean;
@@ -84,7 +85,7 @@ export interface Event {
 
 export interface Poll {
   id: string;
-  clubId: string;
+  clubId: string | null;
   chatId: string | null;
   createdBy: string;
   question: string;
@@ -98,7 +99,7 @@ export interface Poll {
   totalVotes: number;
 }
 
-export interface Chat {
+export interface Conversation {
   id: string;
   club_id: string | null;
   type: 'group' | 'direct';
@@ -106,6 +107,23 @@ export interface Chat {
   created_by: string;
   created_at: string;
   updated_at: string;
+  last_message_content: string | null;
+  last_message_at: string | null;
+  other_user_id: string | null;
+  other_display_name: string | null;
+  other_avatar_url: string | null;
+  other_email: string | null;
+  other_mobile_number: string | null;
+}
+
+export type Chat = Conversation;
+
+export interface ChatParticipant {
+  id: string;
+  display_name: string;
+  email: string;
+  avatar_url: string | null;
+  mobile_number: string | null;
 }
 
 export interface Message {

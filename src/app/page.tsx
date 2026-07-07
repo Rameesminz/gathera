@@ -1,28 +1,28 @@
 import Link from 'next/link';
-import { ArrowRight, Calendar, MessageSquare, Users, Vote } from 'lucide-react';
+import { ArrowRight, MessageSquare, Phone, Shield, Vote } from 'lucide-react';
 import { Header } from '@/components/common/header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const features = [
   {
-    icon: Users,
-    title: 'Clubs',
-    description: 'Create and manage communities with roles and permissions.',
+    icon: MessageSquare,
+    title: 'Direct Messages',
+    description: 'Chat one-on-one with real-time messaging and presence.',
   },
   {
-    icon: Calendar,
-    title: 'Events',
-    description: 'Schedule meetups and track RSVPs in one place.',
+    icon: Phone,
+    title: 'Voice & Video Calls',
+    description: 'Crystal-clear WebRTC calls right inside your conversations.',
   },
   {
     icon: Vote,
     title: 'Polls',
-    description: 'Make group decisions quickly with live voting.',
+    description: 'Create polls in any chat and see live results.',
   },
   {
-    icon: MessageSquare,
-    title: 'Chat',
-    description: 'Real-time group and direct messaging for your club.',
+    icon: Shield,
+    title: 'Secure',
+    description: 'Authenticated messaging with file sharing and notifications.',
   },
 ];
 
@@ -33,14 +33,14 @@ export default function HomePage() {
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-3xl text-center">
           <p className="mb-4 text-sm font-semibold uppercase tracking-wider text-primary">
-            Community platform
+            Messaging platform
           </p>
           <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
-            Gather your people. Build your club.
+            Message anyone. Call instantly.
           </h1>
           <p className="mt-6 text-lg text-muted-foreground">
-            Gathera brings clubs, events, polls, and chat together — on web and mobile, online or
-            offline.
+            Gathera is a WhatsApp-style messaging app with polls, voice & video calls, and file
+            sharing — on desktop and mobile.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link

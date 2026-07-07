@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { LogOut, Bell } from 'lucide-react';
 import { Logo } from '@/components/common/logo';
 import { ThemeToggle } from '@/components/ui/theme-toggle';

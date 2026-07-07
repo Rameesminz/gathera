@@ -24,6 +24,8 @@ export function useWebRTCCall({
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteUserIdRef = useRef<string | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [connected, setConnected] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -36,11 +38,30 @@ export function useWebRTCCall({
     }
   }, []);
 
+  const sendOffer = useCallback(
+    async (targetUserId?: string) => {
+      const pc = pcRef.current;
+      if (!pc) return;
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sendSignal({
+        type: 'offer',
+        payload: offer,
+        ...(targetUserId ? { targetUserId } : {}),
+      });
+    },
+    [sendSignal],
+  );
+
   const createPeer = useCallback(() => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     pc.onicecandidate = (e) => {
       if (e.candidate) {
-        sendSignal({ type: 'ice-candidate', payload: e.candidate.toJSON() });
+        sendSignal({
+          type: 'ice-candidate',
+          payload: e.candidate.toJSON(),
+          ...(remoteUserIdRef.current ? { targetUserId: remoteUserIdRef.current } : {}),
+        });
       }
     };
     pc.ontrack = (e) => {
@@ -54,11 +75,13 @@ export function useWebRTCCall({
   }, [sendSignal]);
 
   const startLocalMedia = useCallback(async () => {
+    if (localStreamRef.current) return localStreamRef.current;
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: withVideo,
     });
     localStreamRef.current = stream;
+    setLocalStream(stream);
     const pc = pcRef.current ?? createPeer();
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
     return stream;
@@ -79,9 +102,7 @@ export function useWebRTCCall({
     ws.onopen = async () => {
       await startLocalMedia();
       if (isInitiator && pcRef.current) {
-        const offer = await pcRef.current.createOffer();
-        await pcRef.current.setLocalDescription(offer);
-        sendSignal({ type: 'offer', payload: offer });
+        await sendOffer();
       }
     };
 
@@ -90,13 +111,24 @@ export function useWebRTCCall({
         const data = JSON.parse(event.data as string) as {
           type: string;
           from?: string;
+          userId?: string;
           payload?: RTCSessionDescriptionInit | RTCIceCandidateInit;
         };
         if (data.from === userId) return;
+
+        if (data.type === 'peer-joined' && data.userId) {
+          if (isInitiator) {
+            remoteUserIdRef.current = data.userId;
+            await sendOffer(data.userId);
+          }
+          return;
+        }
+
         const pc = pcRef.current ?? createPeer();
         if (!localStreamRef.current) await startLocalMedia();
 
         if (data.type === 'offer' && data.payload) {
+          if (data.from) remoteUserIdRef.current = data.from;
           await pc.setRemoteDescription(new RTCSessionDescription(data.payload as RTCSessionDescriptionInit));
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
@@ -116,9 +148,13 @@ export function useWebRTCCall({
     return () => {
       ws.close();
       pcRef.current?.close();
+      pcRef.current = null;
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+      setLocalStream(null);
+      setRemoteStream(null);
     };
-  }, [callId, userId, enabled, isInitiator, createPeer, sendSignal, startLocalMedia]);
+  }, [callId, userId, enabled, isInitiator, createPeer, sendSignal, sendOffer, startLocalMedia]);
 
   const toggleMute = () => {
     const audio = localStreamRef.current?.getAudioTracks()[0];
@@ -148,12 +184,13 @@ export function useWebRTCCall({
     const track = screen.getVideoTracks()[0];
     if (sender && track) await sender.replaceTrack(track);
     localStreamRef.current = screen;
+    setLocalStream(screen);
     setScreenSharing(true);
     track.onended = () => void toggleScreenShare();
   };
 
   return {
-    localStream: localStreamRef.current,
+    localStream,
     remoteStream,
     connected,
     muted,

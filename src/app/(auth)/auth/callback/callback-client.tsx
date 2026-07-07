@@ -17,16 +17,16 @@ export default function AuthCallbackClient() {
     const err = searchParams.get('error');
 
     if (err) {
-      setError('Google sign-in failed');
+      queueMicrotask(() => setError('Google sign-in failed'));
       return;
     }
 
     if (accessToken && refreshToken) {
       void setOAuthTokens(accessToken, refreshToken)
-        .then(() => router.replace('/dashboard'))
+        .then(() => router.replace('/messages'))
         .catch(() => setError('Failed to complete sign-in'));
     } else {
-      setError('Missing authentication tokens');
+      queueMicrotask(() => setError('Missing authentication tokens'));
     }
   }, [searchParams, setOAuthTokens, router]);
 

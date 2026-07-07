@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { IncomingCallHandler } from '@/components/call/incoming-call-handler';
 import { Spinner } from '@/components/ui/spinner';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -11,11 +12,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const isLoading = useAuthStore((s) => s.isLoading);
   const isInitialized = useAuthStore((s) => s.isInitialized);
   const fetchUser = useAuthStore((s) => s.fetchUser);
+  const user = useAuthStore((s) => s.user);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     const unsub = useAuthStore.persist.onFinishHydration(() => setHydrated(true));
-    if (useAuthStore.persist.hasHydrated()) setHydrated(true);
+    if (useAuthStore.persist.hasHydrated()) {
+      queueMicrotask(() => setHydrated(true));
+    }
     return unsub;
   }, []);
 
@@ -39,5 +43,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) return null;
 
-  return <>{children}</>;
+  return (
+    <>
+      {user ? <IncomingCallHandler userId={user.id} /> : null}
+      {children}
+    </>
+  );
 }

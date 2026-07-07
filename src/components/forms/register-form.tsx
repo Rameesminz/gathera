@@ -10,12 +10,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getApiErrorMessage } from '@/lib/api/client';
+import { isValidMobileNumber, normalizeMobileNumber } from '@/lib/phone';
 import { useAuthStore } from '@/stores/auth-store';
 
 const schema = z.object({
   displayName: z.string().min(1, 'Name is required').max(100),
   email: z.string().email('Enter a valid email'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  mobileNumber: z
+    .string()
+    .trim()
+    .optional()
+    .refine((value) => !value || isValidMobileNumber(value), {
+      message: 'Enter a valid mobile number',
+    }),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -32,8 +40,11 @@ export function RegisterForm() {
 
   const onSubmit = async (data: FormData) => {
     try {
-      await registerUser(data.email, data.password, data.displayName);
-      router.push('/dashboard');
+      const mobileNumber = data.mobileNumber?.trim()
+        ? normalizeMobileNumber(data.mobileNumber)
+        : undefined;
+      await registerUser(data.email, data.password, data.displayName, mobileNumber);
+      router.push('/messages');
     } catch (error) {
       setError('root', { message: getApiErrorMessage(error, 'Registration failed') });
     }
@@ -52,6 +63,14 @@ export function RegisterForm() {
           </FormField>
           <FormField label="Email" error={errors.email?.message}>
             <Input type="email" autoComplete="email" placeholder="you@example.com" {...register('email')} />
+          </FormField>
+          <FormField label="Mobile number (optional)" error={errors.mobileNumber?.message}>
+            <Input
+              type="tel"
+              autoComplete="tel"
+              placeholder="+1 555 123 4567"
+              {...register('mobileNumber')}
+            />
           </FormField>
           <FormField label="Password" error={errors.password?.message}>
             <Input type="password" autoComplete="new-password" {...register('password')} />

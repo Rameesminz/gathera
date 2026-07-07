@@ -1,4 +1,5 @@
 import { AppShell } from '@/components/common/app-shell';
+import { ProfileMobileForm } from '@/components/forms/profile-mobile-form';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,7 +22,7 @@ export default async function ProfilePage() {
       <div className="mx-auto max-w-2xl space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Profile</h1>
-          <p className="text-muted-foreground">Your Gathera account</p>
+          <p className="text-muted-foreground">Your messaging account</p>
         </div>
 
         <Card>
@@ -40,6 +41,10 @@ export default async function ProfilePage() {
               </Badge>
             </div>
             <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
+              <span className="text-sm text-muted-foreground">Mobile number</span>
+              <span className="text-sm font-medium">{user.mobile_number ?? 'Not set'}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3">
               <span className="text-sm text-muted-foreground">Member since</span>
               <span className="text-sm font-medium">{formatDate(user.created_at)}</span>
             </div>
@@ -51,6 +56,8 @@ export default async function ProfilePage() {
             ) : null}
           </CardContent>
         </Card>
+
+        <ProfileMobileForm user={user} />
       </div>
     </AppShell>
   );

@@ -46,7 +46,7 @@ export function LoginForm() {
   const onSubmit = async (data: FormData) => {
     try {
       await login(data.email, data.password);
-      router.push('/dashboard');
+      router.push('/messages');
     } catch (error) {
       setError('root', { message: getApiErrorMessage(error, 'Login failed') });
     }

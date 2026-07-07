@@ -1,6 +1,17 @@
 import { api } from '@/lib/api/client';
 import type { ApiSuccessResponse } from '@/types';
 
+export async function initiateChatCall(
+  chatId: string,
+  input: { callType: 'voice' | 'video'; participantIds: string[] },
+) {
+  const { data } = await api.post<ApiSuccessResponse<{ call: Record<string, unknown>; participants: unknown[] }>>(
+    `/calls/chats/${chatId}/calls`,
+    input,
+  );
+  return data.data;
+}
+
 export async function initiateCall(
   clubId: string,
   input: { callType: 'voice' | 'video'; participantIds: string[]; chatId?: string },

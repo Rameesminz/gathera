@@ -2,19 +2,18 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Settings, User, Users } from 'lucide-react';
+import { MessageSquare, Settings, User } from 'lucide-react';
 
 const items = [
-  { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
-  { href: '/clubs', label: 'Clubs', icon: Users },
+  { href: '/messages', label: 'Chats', icon: MessageSquare },
   { href: '/profile', label: 'Profile', icon: User },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
-export function MobileNav({ clubId }: { clubId?: string }) {
+export function MobileNav() {
   const pathname = usePathname();
 
-  if (clubId) return null;
+  if (pathname.startsWith('/messages')) return null;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-md safe-bottom lg:hidden">

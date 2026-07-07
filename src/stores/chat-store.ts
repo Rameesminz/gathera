@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { OnlineUser } from '@/types/club-workspace';
+import type { OnlineUser } from '@/types/messaging';
 
 interface TypingUser {
   userId: string;

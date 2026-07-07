@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     default: 'Gathera',
     template: '%s | Gathera',
   },
-  description: 'Community clubs, events, polls, and chat — all in one place.',
+  description: 'Direct messaging with polls, calls, and file sharing.',
   applicationName: 'Gathera',
   appleWebApp: {
     capable: true,
