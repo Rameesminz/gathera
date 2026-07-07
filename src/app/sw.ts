@@ -33,7 +33,7 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       if (clients[0]) return clients[0].focus();
-      return self.clients.openWindow('/dashboard');
+      return self.clients.openWindow('/messages');
     }),
   );
 });

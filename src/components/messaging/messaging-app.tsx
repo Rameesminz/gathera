@@ -233,7 +233,7 @@ export function MessagingApp({
     setError(null);
     try {
       const result = await initiateChatCall(selectedChatId, { callType, participantIds });
-      setActiveCall({ callId: String(result.call.id), withVideo: callType === 'video' });
+      setActiveCall({ callId: result.call.id, withVideo: callType === 'video' });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to start call'));
     } finally {
@@ -359,7 +359,7 @@ export function MessagingApp({
         <CallOverlay
           callId={activeCall.callId}
           userId={userId}
-          isInitiator
+          isInitiator={true}
           withVideo={activeCall.withVideo}
           onEnd={() => setActiveCall(null)}
         />

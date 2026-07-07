@@ -4,8 +4,8 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Gathera',
     short_name: 'Gathera',
-    description: 'Community clubs, events, polls, and chat.',
-    start_url: '/dashboard',
+    description: 'Messaging with polls, voice & video calls, and file sharing.',
+    start_url: '/messages',
     display: 'standalone',
     background_color: '#f8fafc',
     theme_color: '#059669',
