@@ -88,6 +88,8 @@ export function MessagingApp({
   const [debouncedNewChatQuery, setDebouncedNewChatQuery] = useState('');
   const [searchResults, setSearchResults] = useState<PublicUser[]>([]);
   const [searching, setSearching] = useState(false);
+  const [openingChatUserId, setOpeningChatUserId] = useState<string | null>(null);
+  const [newChatError, setNewChatError] = useState<string | null>(null);
   const [startingCall, setStartingCall] = useState(false);
   const [activeCall, setActiveCall] = useState<{ callId: string; withVideo: boolean } | null>(null);
   const [chatParticipantIds, setChatParticipantIds] = useState<string[]>([]);
@@ -240,17 +242,23 @@ export function MessagingApp({
   };
 
   const handleOpenChat = async (user: PublicUser) => {
+    if (openingChatUserId) return;
+    setOpeningChatUserId(user.id);
+    setNewChatError(null);
     try {
       const chat = await createDirectChat(user.id);
+      if (!chat?.id) {
+        throw new Error('The server did not return a valid conversation');
+      }
       const conversation: Conversation = {
         ...chat,
-        last_message_content: null,
-        last_message_at: null,
-        other_user_id: user.id,
-        other_display_name: user.display_name,
-        other_avatar_url: user.avatar_url,
-        other_email: user.email,
-        other_mobile_number: user.mobile_number,
+        last_message_content: chat.last_message_content ?? null,
+        last_message_at: chat.last_message_at ?? null,
+        other_user_id: chat.other_user_id ?? user.id,
+        other_display_name: chat.other_display_name ?? user.display_name,
+        other_avatar_url: chat.other_avatar_url ?? user.avatar_url,
+        other_email: chat.other_email ?? user.email,
+        other_mobile_number: chat.other_mobile_number ?? user.mobile_number,
       };
       setConversations((prev) => {
         const remaining = prev.filter((c) => c.id !== conversation.id);
@@ -261,8 +269,13 @@ export function MessagingApp({
       setNewChatQuery('');
       setSearchResults([]);
       setMobileShowChat(true);
+      setError(null);
+      void refreshConversations();
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Failed to start chat'));
+      console.error('[messaging] Failed to open/create direct chat', err);
+      setNewChatError(getApiErrorMessage(err, 'Failed to start chat'));
+    } finally {
+      setOpeningChatUserId(null);
     }
   };
 
@@ -393,7 +406,10 @@ export function MessagingApp({
             <Button
               type="button"
               className="mt-3 w-full rounded-full"
-              onClick={() => setShowNewChat((v) => !v)}
+              onClick={() => {
+                setNewChatError(null);
+                setShowNewChat((v) => !v);
+              }}
             >
               <MessageCircle className="h-4 w-4" />
               New Chat
@@ -405,7 +421,10 @@ export function MessagingApp({
               <div className="mb-2 flex items-center gap-2">
                 <Input
                   value={newChatQuery}
-                  onChange={(e) => setNewChatQuery(e.target.value)}
+                  onChange={(e) => {
+                    setNewChatQuery(e.target.value);
+                    if (newChatError) setNewChatError(null);
+                  }}
                   placeholder="Search by mobile number or email"
                   autoFocus
                 />
@@ -413,6 +432,11 @@ export function MessagingApp({
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+              {newChatError ? (
+                <p className="mb-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {newChatError}
+                </p>
+              ) : null}
               <div className="max-h-48 overflow-y-auto">
                 {!debouncedNewChatQuery ? (
                   <p className="px-1 py-2 text-sm text-muted-foreground">
@@ -425,20 +449,27 @@ export function MessagingApp({
                 ) : searchResults.length === 0 ? (
                   <p className="px-1 py-2 text-sm text-muted-foreground">No users found</p>
                 ) : (
-                  searchResults.map((user) => (
-                    <button
-                      key={user.id}
-                      type="button"
-                      onClick={() => void handleOpenChat(user)}
-                      className="mb-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted"
-                    >
-                      <Avatar name={user.display_name} src={user.avatar_url} size="sm" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{user.display_name}</p>
-                        <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-                      </div>
-                    </button>
-                  ))
+                  searchResults.map((user) => {
+                    const opening = openingChatUserId === user.id;
+                    return (
+                      <button
+                        key={user.id}
+                        type="button"
+                        disabled={!!openingChatUserId}
+                        onClick={() => void handleOpenChat(user)}
+                        className="mb-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted disabled:opacity-60"
+                      >
+                        <Avatar name={user.display_name} src={user.avatar_url} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{user.display_name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {user.mobile_number ? `${user.email} · ${user.mobile_number}` : user.email}
+                          </p>
+                        </div>
+                        {opening ? <Spinner className="h-4 w-4 shrink-0" /> : null}
+                      </button>
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -687,7 +718,14 @@ export function MessagingApp({
                   Send and receive messages, share files, create polls, and make voice or video calls.
                 </p>
               </div>
-              <Button onClick={() => setShowNewChat(true)}>Start a new chat</Button>
+              <Button
+                onClick={() => {
+                  setNewChatError(null);
+                  setShowNewChat(true);
+                }}
+              >
+                Start a new chat
+              </Button>
             </div>
           )}
         </section>
