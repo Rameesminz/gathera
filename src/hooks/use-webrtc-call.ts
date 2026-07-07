@@ -100,10 +100,11 @@ export function useWebRTCCall({
     wsRef.current = ws;
 
     ws.onopen = async () => {
-      await startLocalMedia();
-      if (isInitiator && pcRef.current) {
-        await sendOffer();
+      if (isInitiator) {
+        await startLocalMedia();
+        return;
       }
+      await createPeer();
     };
 
     ws.onmessage = async (event) => {
@@ -116,16 +117,16 @@ export function useWebRTCCall({
         };
         if (data.from === userId) return;
 
+        const pc = pcRef.current ?? createPeer();
+        if (!localStreamRef.current) await startLocalMedia();
+
         if (data.type === 'peer-joined' && data.userId) {
           if (isInitiator) {
             remoteUserIdRef.current = data.userId;
             await sendOffer(data.userId);
           }
           return;
-        }
-
-        const pc = pcRef.current ?? createPeer();
-        if (!localStreamRef.current) await startLocalMedia();
+        } 
 
         if (data.type === 'offer' && data.payload) {
           if (data.from) remoteUserIdRef.current = data.from;
@@ -146,13 +147,17 @@ export function useWebRTCCall({
     ws.onclose = () => setConnected(false);
 
     return () => {
-      ws.close();
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+      wsRef.current = null;
       pcRef.current?.close();
       pcRef.current = null;
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
       setLocalStream(null);
       setRemoteStream(null);
+      setConnected(false);
     };
   }, [callId, userId, enabled, isInitiator, createPeer, sendSignal, sendOffer, startLocalMedia]);
 
@@ -180,13 +185,18 @@ export function useWebRTCCall({
     }
     const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
     const pc = pcRef.current;
+    if (!pc) return;
+    if (!pc) return; // Guard against race condition
+
     const sender = pc?.getSenders().find((s) => s.track?.kind === 'video');
     const track = screen.getVideoTracks()[0];
     if (sender && track) await sender.replaceTrack(track);
     localStreamRef.current = screen;
     setLocalStream(screen);
     setScreenSharing(true);
-    track.onended = () => void toggleScreenShare();
+    track.onended = () => {
+      void toggleScreenShare();
+    };
   };
 
   return {
