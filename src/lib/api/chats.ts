@@ -49,12 +49,13 @@ export async function sendMessage(
   content: string,
   messageType: 'text' | 'image' | 'file' = 'text',
   metadata?: Record<string, unknown>,
+  clientMessageId?: string,
 ) {
-  const { data } = await api.post<ApiSuccessResponse<{ message: Message }>>(
+  const { data } = await api.post<ApiSuccessResponse<{ message: Message; ack: string }>>(
     `/chats/${chatId}/messages`,
-    { content, messageType, metadata },
+    { content, messageType, metadata, clientMessageId },
   );
-  return data.data.message;
+  return data.data;
 }
 
 export async function uploadChatFile(chatId: string, file: File) {

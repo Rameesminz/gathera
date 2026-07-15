@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Cookies from 'js-cookie';
 import { TOKEN_KEYS, WS_BASE_URL } from '@/lib/constants';
+import { fetchWsTicket } from '@/lib/api/ws-ticket';
 
 interface UseWebRTCCallOptions {
   callId: string;
@@ -90,64 +91,81 @@ export function useWebRTCCall({
   useEffect(() => {
     if (!enabled || !callId) return;
 
-    const token = Cookies.get(TOKEN_KEYS.access);
-    if (!token) return;
+    let cancelled = false;
+    let ws: WebSocket | null = null;
 
-    const url = new URL(`${WS_BASE_URL}/calls/${callId}/ws`);
-    url.searchParams.set('token', token);
+    void (async () => {
+      const token = Cookies.get(TOKEN_KEYS.access);
+      if (!token) return;
 
-    const ws = new WebSocket(url.toString());
-    wsRef.current = ws;
+      const ticket = await fetchWsTicket();
+      if (cancelled) return;
 
-    ws.onopen = async () => {
-      if (isInitiator) {
-        await startLocalMedia();
-        return;
+      const url = new URL(`${WS_BASE_URL}/calls/${callId}/ws`);
+      if (ticket) {
+        url.searchParams.set('ticket', ticket);
+      } else {
+        url.searchParams.set('token', token);
       }
-      await createPeer();
-    };
 
-    ws.onmessage = async (event) => {
-      try {
-        const data = JSON.parse(event.data as string) as {
-          type: string;
-          from?: string;
-          userId?: string;
-          payload?: RTCSessionDescriptionInit | RTCIceCandidateInit;
-        };
-        if (data.from === userId) return;
+      ws = new WebSocket(url.toString());
+      wsRef.current = ws;
 
-        const pc = pcRef.current ?? createPeer();
-        if (!localStreamRef.current) await startLocalMedia();
-
-        if (data.type === 'peer-joined' && data.userId) {
-          if (isInitiator) {
-            remoteUserIdRef.current = data.userId;
-            await sendOffer(data.userId);
-          }
+      ws.onopen = async () => {
+        if (isInitiator) {
+          await startLocalMedia();
           return;
-        } 
-
-        if (data.type === 'offer' && data.payload) {
-          if (data.from) remoteUserIdRef.current = data.from;
-          await pc.setRemoteDescription(new RTCSessionDescription(data.payload as RTCSessionDescriptionInit));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          sendSignal({ type: 'answer', payload: answer, targetUserId: data.from });
-        } else if (data.type === 'answer' && data.payload) {
-          await pc.setRemoteDescription(new RTCSessionDescription(data.payload as RTCSessionDescriptionInit));
-        } else if (data.type === 'ice-candidate' && data.payload) {
-          await pc.addIceCandidate(new RTCIceCandidate(data.payload as RTCIceCandidateInit));
         }
-      } catch {
-        // ignore malformed signals
-      }
-    };
+        await createPeer();
+      };
 
-    ws.onclose = () => setConnected(false);
+      ws.onmessage = async (event) => {
+        try {
+          const data = JSON.parse(event.data as string) as {
+            type: string;
+            from?: string;
+            userId?: string;
+            payload?: RTCSessionDescriptionInit | RTCIceCandidateInit;
+          };
+          if (data.from === userId) return;
+
+          const pc = pcRef.current ?? createPeer();
+          if (!localStreamRef.current) await startLocalMedia();
+
+          if (data.type === 'peer-joined' && data.userId) {
+            if (isInitiator) {
+              remoteUserIdRef.current = data.userId;
+              await sendOffer(data.userId);
+            }
+            return;
+          }
+
+          if (data.type === 'offer' && data.payload) {
+            if (data.from) remoteUserIdRef.current = data.from;
+            await pc.setRemoteDescription(
+              new RTCSessionDescription(data.payload as RTCSessionDescriptionInit),
+            );
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            sendSignal({ type: 'answer', payload: answer, targetUserId: data.from });
+          } else if (data.type === 'answer' && data.payload) {
+            await pc.setRemoteDescription(
+              new RTCSessionDescription(data.payload as RTCSessionDescriptionInit),
+            );
+          } else if (data.type === 'ice-candidate' && data.payload) {
+            await pc.addIceCandidate(new RTCIceCandidate(data.payload as RTCIceCandidateInit));
+          }
+        } catch {
+          // ignore malformed signals
+        }
+      };
+
+      ws.onclose = () => setConnected(false);
+    })();
 
     return () => {
-      if (ws.readyState === WebSocket.OPEN) {
+      cancelled = true;
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.close();
       }
       wsRef.current = null;

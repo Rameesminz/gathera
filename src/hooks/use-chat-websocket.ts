@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Cookies from 'js-cookie';
 import { TOKEN_KEYS, WS_BASE_URL } from '@/lib/constants';
+import { fetchWsTicket } from '@/lib/api/ws-ticket';
 import { useChatStore } from '@/stores/chat-store';
 import type { ChatWsMessage } from '@/types/messaging';
 
@@ -39,14 +40,22 @@ export function useChatWebSocket({
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let pingTimer: ReturnType<typeof setInterval> | undefined;
 
-    function connect() {
+    async function connect() {
       if (closed) return;
 
-      const token = Cookies.get(TOKEN_KEYS.access);
-      if (!token) return;
+      const accessToken = Cookies.get(TOKEN_KEYS.access);
+      if (!accessToken) return;
+
+      const ticket = await fetchWsTicket();
+      if (closed) return;
 
       const url = new URL(`${WS_BASE_URL}/chats/${chatId}/ws`);
-      url.searchParams.set('token', token);
+      if (ticket) {
+        url.searchParams.set('ticket', ticket);
+      } else {
+        // Backward-compatible fallback
+        url.searchParams.set('token', accessToken);
+      }
 
       const ws = new WebSocket(url.toString());
       wsRef.current = ws;
@@ -93,13 +102,15 @@ export function useChatWebSocket({
         if (closed) return;
         const delay = RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)];
         attempt += 1;
-        reconnectTimer = setTimeout(connect, delay);
+        reconnectTimer = setTimeout(() => {
+          void connect();
+        }, delay);
       };
 
       ws.onerror = () => ws.close();
     }
 
-    connect();
+    void connect();
 
     return () => {
       closed = true;
@@ -110,17 +121,11 @@ export function useChatWebSocket({
     };
   }, [chatId, enabled, setOnlineUsers, setTyping]);
 
-  const sendMessage = useCallback((content: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'message', content }));
-    }
-  }, []);
-
   const sendTyping = useCallback((isTyping: boolean) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'typing', isTyping }));
     }
   }, []);
 
-  return { connected, sendMessage, sendTyping };
+  return { connected, sendTyping };
 }

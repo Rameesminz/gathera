@@ -27,58 +27,160 @@
   --radius-xl: 1rem;
 }
 
+/* ─── Light theme ─────────────────────────────────────────── */
 :root {
-  --background: #f2f3f5;
-  --foreground: #060607;
-  --muted: #e3e5e8;
-  --muted-foreground: #5c5e66;
+  --background: #f0f2f5;
+  --foreground: #111b21;
+  --muted: #e9edef;
+  --muted-foreground: #667781;
   --card: #ffffff;
-  --card-foreground: #060607;
-  --border: #d4d7dc;
-  --input: #d4d7dc;
-  --primary: #23a559;
+  --card-foreground: #111b21;
+  --border: #d1d7db;
+  --input: #f0f2f5;
+  --primary: #00a884;
   --primary-foreground: #ffffff;
-  --accent: #e7f5ed;
-  --accent-foreground: #1a7f45;
-  --destructive: #ed4245;
-  --ring: #23a559;
-  --sidebar: #f2f3f5;
-  --sidebar-active: #e3e5e8;
+  --accent: #d9fdd3;
+  --accent-foreground: #005c4b;
+  --destructive: #f15c6d;
+  --ring: #00a884;
+
+  /* Sidebar */
+  --sidebar-bg: #ffffff;
+  --sidebar-header-bg: #f0f2f5;
+  --sidebar-hover: #f5f6f6;
+  --sidebar-active: #e9edef;
+  --sidebar-border: #e9edef;
+
+  /* Chat panel */
+  --chat-header-bg: #f0f2f5;
   --chat-bg: #efeae2;
+  --chat-bg-pattern: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c8c0b0' fill-opacity='0.18'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+
+  /* Bubbles */
+  --bubble-out: #d9fdd3;
+  --bubble-out-fg: #111b21;
+  --bubble-in: #ffffff;
+  --bubble-in-fg: #111b21;
+  --bubble-shadow: 0 1px 2px rgba(0,0,0,0.13);
+
+  /* Composer */
+  --composer-bg: #f0f2f5;
+  --composer-input-bg: #ffffff;
 }
 
+/* ─── Dark theme ──────────────────────────────────────────── */
 .dark {
-  --background: #1e1f22;
-  --foreground: #f2f3f5;
-  --muted: #2b2d31;
-  --muted-foreground: #949ba4;
-  --card: #2b2d31;
-  --card-foreground: #f2f3f5;
-  --border: #3f4147;
-  --input: #3f4147;
-  --primary: #23a559;
+  --background: #111b21;
+  --foreground: #e9edef;
+  --muted: #202c33;
+  --muted-foreground: #8696a0;
+  --card: #202c33;
+  --card-foreground: #e9edef;
+  --border: #2a3942;
+  --input: #2a3942;
+  --primary: #00a884;
   --primary-foreground: #ffffff;
-  --accent: #1a3d2a;
-  --accent-foreground: #57f287;
-  --destructive: #ed4245;
-  --ring: #23a559;
-  --sidebar: #2b2d31;
-  --sidebar-active: #35373c;
+  --accent: #005c4b;
+  --accent-foreground: #d9fdd3;
+  --destructive: #f15c6d;
+  --ring: #00a884;
+
+  --sidebar-bg: #111b21;
+  --sidebar-header-bg: #202c33;
+  --sidebar-hover: #2a3942;
+  --sidebar-active: #2a3942;
+  --sidebar-border: #2a3942;
+
+  --chat-header-bg: #202c33;
   --chat-bg: #0b141a;
+  --chat-bg-pattern: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+
+  --bubble-out: #005c4b;
+  --bubble-out-fg: #e9edef;
+  --bubble-in: #202c33;
+  --bubble-in-fg: #e9edef;
+  --bubble-shadow: 0 1px 2px rgba(0,0,0,0.4);
+
+  --composer-bg: #202c33;
+  --composer-input-bg: #2a3942;
 }
 
-* {
-  border-color: var(--border);
-}
+/* ─── Base ────────────────────────────────────────────────── */
+* { border-color: var(--border); }
 
 body {
   background: var(--background);
   color: var(--foreground);
   min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
 }
 
+/* ─── Scrollbar ───────────────────────────────────────────── */
+.chat-scroll::-webkit-scrollbar { width: 6px; }
+.chat-scroll::-webkit-scrollbar-track { background: transparent; }
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.chat-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
+
+/* ─── Chat wallpaper ──────────────────────────────────────── */
+.chat-wallpaper {
+  background-color: var(--chat-bg);
+  background-image: var(--chat-bg-pattern);
+}
+
+/* ─── Message bubble tails ────────────────────────────────── */
+.bubble-out {
+  background: var(--bubble-out);
+  color: var(--bubble-out-fg);
+  box-shadow: var(--bubble-shadow);
+  border-radius: 7.5px 7.5px 0 7.5px;
+}
+.bubble-out::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: -8px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 0 8px 8px;
+  border-color: transparent transparent var(--bubble-out) transparent;
+}
+
+.bubble-in {
+  background: var(--bubble-in);
+  color: var(--bubble-in-fg);
+  box-shadow: var(--bubble-shadow);
+  border-radius: 0 7.5px 7.5px 7.5px;
+}
+.bubble-in::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 8px 8px 0;
+  border-color: transparent var(--bubble-in) transparent transparent;
+}
+
+/* ─── Typing dots ─────────────────────────────────────────── */
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30%            { transform: translateY(-4px); opacity: 1; }
+}
+
+/* ─── Slide-in for new messages ───────────────────────────── */
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.msg-animate { animation: msg-in 0.18s ease-out both; }
+
+/* ─── Utilities ───────────────────────────────────────────── */
 @layer utilities {
-  .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 }

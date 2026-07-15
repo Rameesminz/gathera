@@ -19,6 +19,18 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
+function cookieOptions(expiresDays: number) {
+  const secure =
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'https:';
+  return {
+    expires: expiresDays,
+    sameSite: 'lax' as const,
+    path: '/',
+    secure,
+  };
+}
+
 async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = Cookies.get(TOKEN_KEYS.refresh);
   if (!refreshToken) return null;
@@ -29,8 +41,8 @@ async function refreshAccessToken(): Promise<string | null> {
       { refreshToken },
     );
     const tokens = data.data.tokens;
-    Cookies.set(TOKEN_KEYS.access, tokens.accessToken, { expires: 1 });
-    Cookies.set(TOKEN_KEYS.refresh, tokens.refreshToken, { expires: 7 });
+    Cookies.set(TOKEN_KEYS.access, tokens.accessToken, cookieOptions(1));
+    Cookies.set(TOKEN_KEYS.refresh, tokens.refreshToken, cookieOptions(7));
     return tokens.accessToken;
   } catch {
     Cookies.remove(TOKEN_KEYS.access);
@@ -66,9 +78,8 @@ api.interceptors.response.use(
 );
 
 export function setAuthTokens(tokens: AuthTokens) {
-  const opts = { expires: 7, sameSite: 'lax' as const, path: '/' };
-  Cookies.set(TOKEN_KEYS.access, tokens.accessToken, { ...opts, expires: 1 });
-  Cookies.set(TOKEN_KEYS.refresh, tokens.refreshToken, opts);
+  Cookies.set(TOKEN_KEYS.access, tokens.accessToken, cookieOptions(1));
+  Cookies.set(TOKEN_KEYS.refresh, tokens.refreshToken, cookieOptions(7));
 }
 
 export function clearAuthTokens() {

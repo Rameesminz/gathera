@@ -3,6 +3,7 @@ import { api, clearAuthTokens, setAuthTokens } from '@/lib/api/client';
 import { TOKEN_KEYS } from '@/lib/constants';
 import type { ApiSuccessResponse, AuthTokens, PublicUser } from '@/types';
 import Cookies from 'js-cookie';
+import axios from 'axios';
 
 export async function register(input: {
   email: string;
@@ -47,4 +48,12 @@ export function getGoogleAuthUrl() {
 
 export function setOAuthTokens(tokens: AuthTokens) {
   setAuthTokens(tokens);
+}
+
+export async function exchangeOAuthHandoff(code: string) {
+  const { data } = await axios.post<ApiSuccessResponse<{ tokens: AuthTokens }>>(
+    `${API_BASE_URL}/auth/handoff`,
+    { code },
+  );
+  return data.data.tokens;
 }

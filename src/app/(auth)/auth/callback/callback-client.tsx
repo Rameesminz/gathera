@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
+import { exchangeOAuthHandoff } from '@/lib/api/auth';
 import { Spinner } from '@/components/ui/spinner';
 
 export default function AuthCallbackClient() {
@@ -12,8 +13,9 @@ export default function AuthCallbackClient() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const accessToken = searchParams.get('accessToken');
-    const refreshToken = searchParams.get('refreshToken');
+    const code = searchParams.get('code');
+    const legacyAccess = searchParams.get('accessToken');
+    const legacyRefresh = searchParams.get('refreshToken');
     const err = searchParams.get('error');
 
     if (err) {
@@ -21,13 +23,23 @@ export default function AuthCallbackClient() {
       return;
     }
 
-    if (accessToken && refreshToken) {
-      void setOAuthTokens(accessToken, refreshToken)
+    if (code) {
+      void exchangeOAuthHandoff(code)
+        .then((tokens) => setOAuthTokens(tokens.accessToken, tokens.refreshToken))
         .then(() => router.replace('/messages'))
         .catch(() => setError('Failed to complete sign-in'));
-    } else {
-      queueMicrotask(() => setError('Missing authentication tokens'));
+      return;
     }
+
+    // Temporary backward compatibility for in-flight OAuth redirects.
+    if (legacyAccess && legacyRefresh) {
+      void setOAuthTokens(legacyAccess, legacyRefresh)
+        .then(() => router.replace('/messages'))
+        .catch(() => setError('Failed to complete sign-in'));
+      return;
+    }
+
+    queueMicrotask(() => setError('Missing authentication code'));
   }, [searchParams, setOAuthTokens, router]);
 
   if (error) {

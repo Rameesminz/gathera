@@ -10,7 +10,7 @@ import {
   Search,
   Send,
   Settings,
-  User,
+  Smile,
   X,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
@@ -30,6 +30,7 @@ import {
   fetchChatParticipants,
   fetchConversations,
   fetchMessages,
+  sendMessage as sendMessageHttp,
   uploadChatFile,
 } from '@/lib/api/chats';
 import { fetchChatPolls } from '@/lib/api/polls';
@@ -38,7 +39,14 @@ import { useChatStore } from '@/stores/chat-store';
 import { useMessagingStore } from '@/stores/messaging-store';
 import { cn, formatConversationTime, formatMessageTime } from '@/lib/utils';
 import type { Conversation, Message, Poll, PublicUser } from '@/types';
+import { User } from 'lucide-react';
 import type { ChatWsMessage } from '@/types/messaging';
+
+// Stable UUID v4 generator (crypto.randomUUID with fallback)
+function newClientId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 interface MessagingAppProps {
   userId: string;
@@ -102,6 +110,12 @@ export function MessagingApp({
   const onlineUsers = useChatStore((s) => s.onlineUsers);
   const markRead = useMessagingStore((s) => s.markRead);
   const getUnreadCount = useMessagingStore((s) => s.getUnreadCount);
+  const enqueuePending = useMessagingStore((s) => s.enqueuePending);
+  const dequeuePending = useMessagingStore((s) => s.dequeuePending);
+  // Stable refs — avoids re-triggering the chat-load useEffect on every render
+  const getPendingForChatRef = useRef(useMessagingStore.getState().getPendingForChat);
+  const buildOptimisticMessageRef = useRef(useMessagingStore.getState().buildOptimisticMessage);
+  const sendingRef = useRef(false);
 
   const selectedConversation = conversations.find((c) => c.id === selectedChatId) ?? null;
 
@@ -117,15 +131,29 @@ export function MessagingApp({
   const handleIncoming = useCallback(
     (msg: ChatWsMessage) => {
       setMessages((prev) => {
+        // Replace any optimistic entry (pending OR already-replaced-by-HTTP) with the
+        // canonical server copy, guarding on client_message_id alone so we don't
+        // append a duplicate when the WS broadcast races the HTTP response.
+        if (msg.client_message_id) {
+          const hasOptimistic = prev.some(
+            (m) => m.client_message_id === msg.client_message_id,
+          );
+          if (hasOptimistic) {
+            dequeuePending(msg.client_message_id);
+            return prev.map((m) =>
+              m.client_message_id === msg.client_message_id ? (msg as Message) : m,
+            );
+          }
+        }
         if (prev.some((m) => m.id === msg.id)) return prev;
         return [...prev, msg as Message];
       });
       void refreshConversations();
     },
-    [refreshConversations],
+    [refreshConversations, dequeuePending],
   );
 
-  const { connected, sendMessage, sendTyping } = useChatWebSocket({
+  const { connected, sendTyping } = useChatWebSocket({
     chatId: selectedChatId ?? '',
     userId,
     displayName,
@@ -148,7 +176,13 @@ export function MessagingApp({
           fetchChatParticipants(selectedChatId),
         ]);
         if (!cancelled) {
-          setMessages(messageResult.data);
+          const serverMessages = messageResult.data;
+          // Re-attach any persisted pending messages not yet ACK'd.
+          // Use stable refs so this effect only re-runs when selectedChatId/userId change.
+          const pending = getPendingForChatRef.current(selectedChatId).map((p) =>
+            buildOptimisticMessageRef.current(p, userId),
+          );
+          setMessages([...serverMessages.reverse(), ...pending]);
           setPolls(pollResult);
           setChatParticipantIds(participantIds);
         }
@@ -162,7 +196,7 @@ export function MessagingApp({
     return () => {
       cancelled = true;
     };
-  }, [selectedChatId, markRead]);
+  }, [selectedChatId, markRead, userId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -213,13 +247,41 @@ export function MessagingApp({
     setShowPolls(false);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const text = input.trim();
-    if (!text || !selectedChatId) return;
-    sendMessage(text);
+    if (!text || !selectedChatId || sendingRef.current) return;
+    sendingRef.current = true;
+
+    const clientMessageId = newClientId();
+    const pending = { clientMessageId, chatId: selectedChatId, content: text, createdAt: new Date().toISOString() };
+
     setInput('');
     sendTyping(false);
-    void refreshConversations();
+
+    // Optimistic: show message immediately as pending
+    enqueuePending(pending);
+    setMessages((prev) => [...prev, buildOptimisticMessageRef.current(pending, userId)]);
+
+    try {
+      const { message } = await sendMessageHttp(selectedChatId, text, 'text', undefined, clientMessageId);
+      // Replace optimistic entry with confirmed message from server.
+      // The WS broadcast may arrive before or after this — handleIncoming guards both.
+      dequeuePending(clientMessageId);
+      setMessages((prev) =>
+        prev.map((m) => (m.client_message_id === clientMessageId ? message : m)),
+      );
+      void refreshConversations();
+    } catch (err) {
+      // Mark as failed in UI; keep in pending queue so it survives page refresh.
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.client_message_id === clientMessageId ? { ...m, ack_status: 'failed' as const } : m,
+        ),
+      );
+      setError(getApiErrorMessage(err, 'Failed to send message'));
+    } finally {
+      sendingRef.current = false;
+    }
   };
 
   const handleStartCall = async (callType: 'voice' | 'video') => {
@@ -233,7 +295,7 @@ export function MessagingApp({
     setError(null);
     try {
       const result = await initiateChatCall(selectedChatId, { callType, participantIds });
-      setActiveCall({ callId: result.call.id, withVideo: callType === 'video' });
+      setActiveCall({ callId: String(result.call.id), withVideo: callType === 'video' });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to start call'));
     } finally {
@@ -298,11 +360,11 @@ export function MessagingApp({
     if (msg.message_type === 'image' && meta.fileId) {
       return (
         <div key={msg.id} className={cn('flex', mine ? 'justify-end' : 'justify-start')}>
-          <div className={cn('max-w-[80%] overflow-hidden rounded-2xl shadow-sm', mine ? 'rounded-br-md' : 'rounded-bl-md')}>
+          <div className={cn('group relative max-w-[75%] overflow-hidden rounded-2xl shadow-md md:max-w-[60%]', mine ? 'rounded-br-lg' : 'rounded-bl-lg')}>
             <ChatImage chatId={msg.chat_id} fileId={String(meta.fileId)} alt={msg.content ?? 'Image'} />
-            <p className={cn('px-3 py-1 text-[10px] opacity-70', mine ? 'text-right text-primary-foreground bg-primary' : 'bg-muted')}>
+            <div className="absolute bottom-1 right-2 hidden items-center gap-1 group-hover:flex">
               {formatMessageTime(msg.created_at)}
-            </p>
+            </div>
           </div>
         </div>
       );
@@ -326,8 +388,8 @@ export function MessagingApp({
                 });
             }}
             className={cn(
-              'max-w-[80%] rounded-2xl px-4 py-3 text-left text-sm shadow-sm underline',
-              mine ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md bg-muted',
+              'flex max-w-[75%] items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm shadow-md transition-colors hover:underline md:max-w-[60%]',
+              mine ? 'rounded-br-lg bg-blue-600 text-white' : 'rounded-bl-lg bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100',
             )}
           >
             {msg.content ?? 'File'}
@@ -340,13 +402,18 @@ export function MessagingApp({
       <div key={msg.id} className={cn('flex', mine ? 'justify-end' : 'justify-start')}>
         <div
           className={cn(
-            'max-w-[80%] rounded-2xl px-4 py-2 text-sm shadow-sm',
-            mine ? 'rounded-br-md bg-primary text-primary-foreground' : 'rounded-bl-md bg-muted text-foreground',
+            'max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-md md:max-w-[60%]',
+            mine ? 'rounded-br-lg bg-blue-600 text-white' : 'rounded-bl-lg bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-100',
+            msg.ack_status === 'pending' && 'opacity-70',
           )}
         >
           <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-          <p className={cn('mt-1 text-[10px] opacity-70', mine ? 'text-right' : 'text-left')}>
-            {formatMessageTime(msg.created_at)}
+          <p className={cn('mt-1 text-[11px] opacity-70', mine ? 'text-right' : 'text-left')}>
+            {msg.ack_status === 'pending'
+              ? 'Sending…'
+              : msg.ack_status === 'failed'
+                ? '⚠ Failed'
+                : formatMessageTime(msg.created_at)}
           </p>
         </div>
       </div>
@@ -371,31 +438,31 @@ export function MessagingApp({
         onCreated={(poll) => setPolls((prev) => [poll, ...prev])}
       />
 
-      <div className="flex h-[calc(100dvh-4rem)] overflow-hidden rounded-xl border border-border bg-card shadow-sm md:h-[calc(100dvh-5rem)]">
+      <div className="flex h-[calc(100dvh-4rem)] overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-lg dark:border-gray-800/80 dark:bg-gray-900 md:h-[calc(100dvh-5rem)]">
         {/* Sidebar */}
         <aside
           className={cn(
-            'flex w-full shrink-0 flex-col border-r border-border bg-[var(--sidebar)] md:w-96',
+            'flex w-full shrink-0 flex-col border-r border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950 md:w-80 lg:w-96',
             mobileShowChat ? 'hidden md:flex' : 'flex',
           )}
         >
-          <div className="border-b border-border p-3">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <Link href="/profile" className="flex min-w-0 items-center gap-3">
+          <div className="border-b border-gray-200 p-4 dark:border-gray-800">
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <Link href="/profile" className="flex min-w-0 items-center gap-3 rounded-lg p-1 transition-colors hover:bg-gray-200/50 dark:hover:bg-gray-800/50">
                 <Avatar name={displayName} src={avatarUrl} size="md" />
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{displayName}</p>
-                  <p className="truncate text-xs text-muted-foreground">Your profile</p>
+                  <p className="truncate text-xs text-gray-500 dark:text-gray-400">Online</p>
                 </div>
               </Link>
               <div className="flex gap-1">
-                <Link href="/settings" className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-muted" aria-label="Settings">
-                  <Settings className="h-4 w-4" />
+                <Link href="/settings" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-200/60 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800/60 dark:hover:text-gray-200" aria-label="Settings">
+                  <Settings className="h-5 w-5" />
                 </Link>
               </div>
             </div>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
               <Input
                 value={sidebarSearch}
                 onChange={(e) => setSidebarSearch(e.target.value)}
@@ -405,19 +472,19 @@ export function MessagingApp({
             </div>
             <Button
               type="button"
-              className="mt-3 w-full rounded-full"
+              className="mt-4 w-full rounded-full"
               onClick={() => {
                 setNewChatError(null);
                 setShowNewChat((v) => !v);
               }}
             >
-              <MessageCircle className="h-4 w-4" />
+              <MessageCircle className="mr-2 h-4 w-4" />
               New Chat
             </Button>
           </div>
 
           {showNewChat ? (
-            <div className="border-b border-border p-3">
+            <div className="border-b border-gray-200 p-3 dark:border-gray-800">
               <div className="mb-2 flex items-center gap-2">
                 <Input
                   value={newChatQuery}
@@ -433,13 +500,13 @@ export function MessagingApp({
                 </Button>
               </div>
               {newChatError ? (
-                <p className="mb-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <p className="mb-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">
                   {newChatError}
                 </p>
               ) : null}
               <div className="max-h-48 overflow-y-auto">
                 {!debouncedNewChatQuery ? (
-                  <p className="px-1 py-2 text-sm text-muted-foreground">
+                  <p className="px-1 py-2 text-sm text-gray-500 dark:text-gray-400">
                     Find users by email, mobile number, or name
                   </p>
                 ) : searching ? (
@@ -447,7 +514,7 @@ export function MessagingApp({
                     <Spinner className="h-5 w-5" />
                   </div>
                 ) : searchResults.length === 0 ? (
-                  <p className="px-1 py-2 text-sm text-muted-foreground">No users found</p>
+                  <p className="px-1 py-2 text-sm text-gray-500 dark:text-gray-400">No users found</p>
                 ) : (
                   searchResults.map((user) => {
                     const opening = openingChatUserId === user.id;
@@ -456,12 +523,12 @@ export function MessagingApp({
                         key={user.id}
                         type="button"
                         disabled={!!openingChatUserId}
-                        onClick={() => void handleOpenChat(user)}
-                        className="mb-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted disabled:opacity-60"
+                        onClick={() => { void handleOpenChat(user); }}
+                        className="mb-1 flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-gray-200/60 disabled:opacity-60 dark:hover:bg-gray-800/60"
                       >
                         <Avatar name={user.display_name} src={user.avatar_url} size="sm" />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{user.display_name}</p>
+                          <p className="truncate text-sm font-semibold">{user.display_name}</p>
                           <p className="truncate text-xs text-muted-foreground">
                             {user.mobile_number ? `${user.email} · ${user.mobile_number}` : user.email}
                           </p>
@@ -477,7 +544,7 @@ export function MessagingApp({
 
           <div className="flex-1 overflow-y-auto">
             {filteredConversations.length === 0 ? (
-              <p className="p-4 text-center text-sm text-muted-foreground">
+              <p className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
                 No conversations yet. Start a new chat.
               </p>
             ) : (
@@ -491,9 +558,9 @@ export function MessagingApp({
                     key={conversation.id}
                     type="button"
                     onClick={() => handleSelectChat(conversation.id)}
-                    className={cn(
-                      'flex w-full items-center gap-3 border-b border-border/50 px-3 py-3 text-left transition-colors hover:bg-muted/60',
-                      selectedChatId === conversation.id && 'bg-[var(--sidebar-active)]',
+                    className={cn( //
+                      'flex w-full items-center gap-3 border-b border-gray-200/60 px-4 py-3 text-left transition-colors hover:bg-gray-200/60 dark:border-gray-800/60 dark:hover:bg-gray-800/60',
+                      selectedChatId === conversation.id && 'bg-blue-50 dark:bg-gray-800/80',
                     )}
                   >
                     <div className="relative">
@@ -502,19 +569,19 @@ export function MessagingApp({
                         src={conversation.other_avatar_url}
                         size="md"
                       />
-                      {isOnline ? (
-                        <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[var(--sidebar)] bg-primary" />
+                      {isOnline ? ( //
+                        <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-gray-50 bg-green-500 dark:border-gray-950" />
                       ) : null}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate font-medium">{conversationTitle(conversation)}</p>
-                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                        <p className="truncate font-semibold">{conversationTitle(conversation)}</p>
+                        <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
                           {formatConversationTime(conversation.last_message_at ?? conversation.updated_at)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm text-muted-foreground">
+                        <p className={cn('truncate text-sm', unread > 0 ? 'font-semibold text-gray-800 dark:text-gray-200' : 'text-gray-500 dark:text-gray-400')}>
                           {conversationPreview(conversation)}
                         </p>
                         {unread > 0 ? (
@@ -541,7 +608,7 @@ export function MessagingApp({
         >
           {selectedConversation ? (
             <>
-              <header className="flex items-center gap-3 border-b border-border px-3 py-3">
+              <header className="flex shrink-0 items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
                 <Button
                   type="button"
                   variant="ghost"
@@ -558,8 +625,8 @@ export function MessagingApp({
                   size="md"
                 />
                 <div className="min-w-0 flex-1">
-                  <h2 className="truncate font-semibold">{conversationTitle(selectedConversation)}</h2>
-                  <p className="text-xs text-muted-foreground">
+                  <h2 className="truncate font-bold">{conversationTitle(selectedConversation)}</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
                     {otherParticipantOnline
                       ? 'Online'
                       : connected
@@ -574,22 +641,22 @@ export function MessagingApp({
                 />
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                   size="icon"
                   aria-label="Polls"
                   title="Polls"
                   onClick={() => setShowPolls((v) => !v)}
                 >
-                  <BarChart3 className="h-5 w-5" />
+                  <BarChart3 className="h-5 w-5 text-gray-500 dark:text-gray-400" />
                 </Button>
               </header>
 
               <div className="flex min-h-0 flex-1">
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex-1 space-y-3 overflow-y-auto bg-[var(--chat-bg)] p-4">
+                  <div className="flex-1 space-y-4 overflow-y-auto bg-gray-100/50 p-4 dark:bg-gray-900/80">
                     {loading ? (
                       <div className="flex justify-center py-8">
-                        <Spinner />
+                        <Spinner className="h-8 w-8" />
                       </div>
                     ) : null}
                     {error ? <p className="text-center text-sm text-destructive">{error}</p> : null}
@@ -605,19 +672,21 @@ export function MessagingApp({
                       </div>
                     ))}
                     {messages.map(renderMessage)}
-                    {typingUsers.filter((t) => t.userId !== userId).length > 0 ? (
-                      <p className="text-xs text-muted-foreground">
+                    {typingUsers.filter((t) => t.userId !== userId).length > 0 && (
+                      <div className="flex justify-start">
+                        <div className="rounded-bl-lg rounded-2xl bg-gray-200 px-3 py-2 text-sm text-gray-500 shadow-md dark:bg-gray-700 dark:text-gray-400">
                         {typingUsers
                           .filter((t) => t.userId !== userId)
                           .map((t) => t.displayName)
                           .join(', ')}{' '}
-                        typing...
-                      </p>
-                    ) : null}
+                          is typing...
+                        </div>
+                      </div>
+                    )}
                     <div ref={bottomRef} />
                   </div>
 
-                  <div className="border-t border-border p-3">
+                  <div className="shrink-0 border-t border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950">
                     <div className="flex items-end gap-2">
                       <input
                         ref={fileInputRef}
@@ -632,12 +701,21 @@ export function MessagingApp({
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon"
-                        className="shrink-0 rounded-full"
+                        size="icon" //
+                        className="shrink-0 rounded-full text-gray-500 hover:bg-gray-200/60 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800/60 dark:hover:text-gray-200"
                         onClick={() => fileInputRef.current?.click()}
                         aria-label="Attach file"
                       >
                         <Paperclip className="h-5 w-5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon" //
+                        className="shrink-0 rounded-full text-gray-500 hover:bg-gray-200/60 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800/60 dark:hover:text-gray-200"
+                        aria-label="Emoji"
+                      >
+                        <Smile className="h-5 w-5" />
                       </Button>
                       <Input
                         value={input}
@@ -656,19 +734,19 @@ export function MessagingApp({
                       />
                       <Button
                         size="icon"
-                        className="shrink-0 rounded-full"
+                        className="shrink-0 rounded-full bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-600/50"
                         onClick={handleSend}
                         disabled={!input.trim()}
                         aria-label="Send message"
                       >
-                        <Send className="h-4 w-4" />
+                        <Send className="h-5 w-5" />
                       </Button>
                     </div>
                   </div>
                 </div>
 
                 {showPolls ? (
-                  <aside className="fixed inset-0 z-40 flex flex-col bg-card lg:static lg:inset-auto lg:z-auto lg:w-80 lg:shrink-0 lg:border-l lg:border-border">
+                  <aside className="fixed inset-0 z-40 flex flex-col bg-white dark:bg-gray-950 lg:static lg:inset-auto lg:z-auto lg:w-80 lg:shrink-0 lg:border-l lg:border-border">
                     <div className="flex items-center justify-between border-b border-border p-3">
                       <h3 className="font-semibold">Polls</h3>
                       <div className="flex gap-2">
@@ -689,7 +767,7 @@ export function MessagingApp({
                     </div>
                     <div className="flex-1 space-y-3 overflow-y-auto p-3">
                       {polls.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No polls in this chat yet.</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">No polls in this chat yet.</p>
                       ) : (
                         polls.map((poll) => (
                           <PollMessage
@@ -708,19 +786,22 @@ export function MessagingApp({
               </div>
             </>
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[var(--chat-bg)] p-8 text-center">
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-muted">
-                <User className="h-10 w-10 text-muted-foreground" />
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-gray-100/50 p-8 text-center dark:bg-gray-900/80">
+              <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-800 dark:to-gray-900">
+                <MessageCircle className="h-12 w-12 text-blue-500" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold">Gathera Messages</h2>
-                <p className="mt-1 max-w-sm text-muted-foreground">
-                  Send and receive messages, share files, create polls, and make voice or video calls.
+                <h2 className="text-2xl font-bold">Welcome to Gathera</h2>
+                <p className="mt-2 max-w-sm text-gray-500 dark:text-gray-400">
+                  Select a conversation or start a new one to begin messaging.
                 </p>
               </div>
               <Button
+                size="lg"
+                className="mt-4 rounded-full"
                 onClick={() => {
                   setNewChatError(null);
+                  setMobileShowChat(false);
                   setShowNewChat(true);
                 }}
               >

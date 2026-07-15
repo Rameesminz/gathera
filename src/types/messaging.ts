@@ -10,5 +10,7 @@ export interface ChatWsMessage {
   content: string | null;
   message_type: string;
   metadata: string;
+  client_message_id: string | null;
+  ack_status: 'delivered' | 'failed' | 'pending';
   created_at: string;
 }

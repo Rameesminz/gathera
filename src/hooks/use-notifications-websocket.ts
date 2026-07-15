@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import Cookies from 'js-cookie';
 import { TOKEN_KEYS, WS_BASE_URL } from '@/lib/constants';
+import { fetchWsTicket } from '@/lib/api/ws-ticket';
 import { useNotificationStore } from '@/stores/notification-store';
 
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000];
@@ -38,14 +39,21 @@ export function useNotificationsWebSocket({
     let attempt = 0;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
-    function connect() {
+    async function connect() {
       if (closed) return;
 
       const token = Cookies.get(TOKEN_KEYS.access);
       if (!token) return;
 
+      const ticket = await fetchWsTicket();
+      if (closed) return;
+
       const url = new URL(`${WS_BASE_URL}/notifications/ws`);
-      url.searchParams.set('token', token);
+      if (ticket) {
+        url.searchParams.set('ticket', ticket);
+      } else {
+        url.searchParams.set('token', token);
+      }
 
       const ws = new WebSocket(url.toString());
       wsRef.current = ws;
@@ -95,13 +103,15 @@ export function useNotificationsWebSocket({
         if (closed) return;
         const delay = RECONNECT_DELAYS[Math.min(attempt, RECONNECT_DELAYS.length - 1)];
         attempt += 1;
-        reconnectTimer = setTimeout(connect, delay);
+        reconnectTimer = setTimeout(() => {
+          void connect();
+        }, delay);
       };
 
       ws.onerror = () => ws.close();
     }
 
-    connect();
+    void connect();
 
     return () => {
       closed = true;
